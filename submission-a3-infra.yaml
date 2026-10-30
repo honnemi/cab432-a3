@@ -1,0 +1,79 @@
+cloudInfrastructure:
+  - type: Amazon CloudFront distribution
+    arn: arn:aws:cloudfront::901444280953:distribution/E2R8G8J8L1I0QU
+    description: CDN serving static assets from S3 and routing /api/* requests to API Gateway
+
+  - type: Amazon Route 53 DNS record
+    arn: wayword.cab432.com
+    description: DNS record aliasing the app domain to the CloudFront distribution
+
+  - type: AWS Certificate Manager certificate
+    arn: arn:aws:acm:us-east-1:901444280953:certificate/ea5cceb5-5402-4ed7-bd5b-59393b74bc3d
+    description: TLS certificate (us-east-1) attached to CloudFront for HTTPS on the custom domain
+
+  - type: Amazon S3 bucket (static web assets)
+    arn: arn:aws:s3:::n11496096-phrasebook-frontend
+    description: Private bucket holding the front-end files, served only through CloudFront
+
+  - type: Amazon API Gateway
+    arn: arn:aws:apigateway:ap-southeast-2::/apis/70ww9cubij
+    description: Public API entry point with rate/burst throttling, routing requests to Lambda
+
+  - type: Lambda function
+    arn: arn:aws:lambda:ap-southeast-2:901444280953:function:n11496096-job-submission-lambda
+    description: Handles job submission and status polling, writing job records to DynamoDB and enqueuing jobs to SQS
+
+  - type: Amazon SQS queue
+    arn: arn:aws:sqs:ap-southeast-2:901444280953:n11496096-jobs-queue
+    description: Job queue that buffers translation/PDF requests for the workers
+
+  - type: Amazon SQS dead-letter queue
+    arn: arn:aws:sqs:ap-southeast-2:901444280953:n11496096-jobs-dlq
+    description: Receives job messages that fail processing after the maximum number of receive attempts, so failed jobs are isolated for inspection
+
+  - type: Amazon DynamoDB table
+    arn: arn:aws:dynamodb:ap-southeast-2:901444280953:table/n11496096-jobs-table
+    description: Stores job records and status, updated by Lambda and the ECS worker
+
+  - type: Amazon ECS service
+    arn: arn:aws:ecs:ap-southeast-2:901444280953:service/n11496096-phrasebook-cluster/n11496096-phrasebook-service
+    description: Worker containers that poll SQS, generate the PDFs and update job status
+
+  - type: Amazon ECS task definition
+    arn: arn:aws:ecs:ap-southeast-2:901444280953:task-definition/n11496096-phrasebook-task:5
+    description: Defines the worker container (image, CPU/memory, IAM role, environment config) run by the ECS service
+
+  - type: Amazon ElastiCache for Redis
+    arn: arn:aws:elasticache:ap-southeast-2:901444280953:replicationgroup:n11496096-redis-cache
+    description: Cache of translated phrases to cut latency and repeated calls
+
+  - type: Amazon S3 bucket (generated PDFs)
+    arn: arn:aws:s3:::n11496096-phrasebooks
+    description: Stores completed PDF guides, delivered to users via presigned URLs
+
+  - type: Application Auto Scaling policy
+    arn: arn:aws:iam::901444280953:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+    description: Target tracking policy scaling ECS tasks on SQS queue depth per task
+
+  - type: Amazon CloudWatch alarm (low)
+    arn: arn:aws:cloudwatch:ap-southeast-2:901444280953:alarm:TargetTracking-service/n11496096-phrasebook-cluster/n11496096-phrasebook-service-AlarmLow-5e5ea096-97a2-4f30-95ad-3c0fb0271692
+    description: Alarm tracking queue depth metrics used to drive ECS scaling
+
+  - type: Amazon CloudWatch alarm (high)
+    arn: arn:aws:cloudwatch:ap-southeast-2:901444280953:alarm:TargetTracking-service/n11496096-phrasebook-cluster/n11496096-phrasebook-service-AlarmHigh-41b0d529-1329-48ae-bbf6-471d77deab9e
+    description: Alarm tracking queue depth metrics used to drive ECS scaling
+
+  - type: Amazon CloudWatch log group
+    arn: arn:aws:logs:ap-southeast-2:901444280953:log-group:/ecs/n11496096-phrasebook-task:*
+    description: Container logs from the ECS worker (job processing, errors, retries)
+
+  - type: Amazon CloudWatch log group
+    arn: arn:aws:logs:ap-southeast-2:901444280953:log-group:/aws/lambda/n11496096-job-submission-lambda:*
+    description: Lambda logs for job submission and status polling requests
+
+  - type: Amazon Bedrock foundational model
+    arn: arn:aws:bedrock:ap-southeast-2::foundation-model/nvidia.nemotron-super-3-120b
+    description: LLM used by the worker to translate phrases and generate the travel phrase guide content
+
+metaData:
+  qutUsernameTag: n11496096@qut.edu.au

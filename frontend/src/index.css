@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@200..800&display=swap');
+
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+  font-family: "Manrope", sans-serif;
+}
+
+h1, h2 {
+  font-family: "Instrument Serif", sans-serif;
+}
