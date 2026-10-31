@@ -418,7 +418,7 @@ Return only valid JSON.
                 ],
                 inferenceConfig={
                     "maxTokens": 4096,
-                    "temperature": 0.1,
+                    "temperature": 0.0,
                 },
             )
 
@@ -630,7 +630,7 @@ def run_worker():
                 QueueUrl=QUEUE_URL,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=20,
-                VisibilityTimeout=900,
+                VisibilityTimeout=300,
                 AttributeNames=["ApproximateReceiveCount"],
             )
 
