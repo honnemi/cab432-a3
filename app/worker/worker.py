@@ -15,6 +15,13 @@ from json_repair import repair_json
 
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logger = logging.getLogger(__name__)
+
 # AWS Systems Manager Parameter Store
 BOOTSTRAP_REGION = os.environ.get("AWS_REGION", "ap-southeast-2")
 PARAMETER_PATH = "/n11496096/phrasebook/"
@@ -82,14 +89,6 @@ METRIC_NAMESPACE = CONFIG["metric-namespace"]
 MEMCACHE_HOST = CONFIG.get("memcache-host") or None
 MEMCACHE_PORT = int(CONFIG.get("memcache-port", "11211"))
 MEMCACHE_TLS = CONFIG.get("memcache-tls", "false").lower() == "true"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-logger = logging.getLogger(__name__)
 
 
 # AWS service clients
