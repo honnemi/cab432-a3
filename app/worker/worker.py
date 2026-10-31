@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import signal
+import ssl
 from datetime import datetime, timezone
 
 import boto3
@@ -77,9 +78,9 @@ BATCH_SIZE = int(CONFIG["batch-size"])
 CACHE_TTL_SECONDS = int(CONFIG["cache-ttl-seconds"])
 METRIC_NAMESPACE = CONFIG["metric-namespace"]
 
-REDIS_HOST = CONFIG.get("redis-host") or None
-REDIS_PORT = int(CONFIG.get("redis-port", "6379"))
-REDIS_TLS = CONFIG.get("redis-tls", "false").lower() == "true"
+MEMCACHE_HOST = CONFIG.get("memcache-host") or None
+MEMCACHE_PORT = int(CONFIG.get("memcache-port", "11211"))
+MEMCACHE_TLS = CONFIG.get("memcache-tls", "false").lower() == "true"
 
 
 # AWS service clients
@@ -106,9 +107,9 @@ print(f"Region: {REGION}")
 print(f"Model: {MODEL_ID}")
 print(f"Job table: {TABLE_NAME}")
 print(
-    f"Redis: {REDIS_HOST}:{REDIS_PORT}"
-    if REDIS_HOST
-    else "Redis: disabled"
+    f"Memcached: {MEMCACHE_HOST}:{MEMCACHE_PORT}"
+    if MEMCACHE_HOST
+    else "Memcached: disabled"
 )
 
 
@@ -126,37 +127,46 @@ signal.signal(signal.SIGTERM, _handle_shutdown)
 signal.signal(signal.SIGINT, _handle_shutdown)
 
 
-# Redis
+# Memcached
 cache = None
 
-if REDIS_HOST:
+if MEMCACHE_HOST:
     try:
-        import redis
+        from pymemcache.client.base import Client as MemcacheClient
 
-        cache = redis.Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            ssl=REDIS_TLS,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-            decode_responses=True,  # return str, not bytes
+        cache = MemcacheClient(
+            (MEMCACHE_HOST, MEMCACHE_PORT),
+            connect_timeout=2,
+            timeout=2,
+            tls_context=(
+                ssl.create_default_context() if MEMCACHE_TLS else None
+            ),
         )
 
-        cache.ping()
-        print(f"Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+        cache.version()  # connectivity check (memcached has no PING)
+        print(f"Connected to Memcached at {MEMCACHE_HOST}:{MEMCACHE_PORT}")
 
     except Exception as e:
-        print(f"Redis unavailable; continuing without cache: {e}")
+        print(f"Memcached unavailable; continuing without cache: {e}")
         cache = None
 
 
 def cache_key(phrase, language):
-    """Key includes the phrase and target language, not formality."""
+    """Key includes the phrase and target language, not formality.
+
+    Memcached keys must be <= 250 bytes with no whitespace or control
+    characters, so the phrase is hashed and the language is sanitised.
+    """
     digest = hashlib.sha256(
         phrase.strip().lower().encode("utf-8")
     ).hexdigest()[:32]
 
-    return f"tr:v2:{language.strip().lower()}:{digest}"
+    safe_language = "".join(
+        ch if ch.isalnum() else "_"
+        for ch in language.strip().lower()
+    )
+
+    return f"tr:v2:{safe_language}:{digest}"
 
 
 def cache_get_many(phrases, language):
@@ -171,24 +181,21 @@ def cache_get_many(phrases, language):
             for phrase in unique_phrases
         }
 
-        keys = list(key_to_phrase.keys())
-        values = cache.mget(keys)  # list in the same order as keys
+        # get_many returns only the keys that were found
+        found = cache.get_many(list(key_to_phrase.keys()))
         results = {}
 
-        for key, value in zip(keys, values):
-            if value is None:
-                continue
-
+        for key, value in found.items():
             try:
                 results[key_to_phrase[key]] = json.loads(value)
 
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 print(f"Invalid cached entry for {key}: {e}")
 
         return results
 
     except Exception as e:
-        print(f"Redis read failed; treating as cache miss: {e}")
+        print(f"Memcached read failed; treating as cache miss: {e}")
         return {}
 
 
@@ -197,17 +204,24 @@ def cache_set_many(entries, language):
         return
 
     try:
-        pipe = cache.pipeline()
-        for phrase, entry in entries.items():
-            pipe.set(
-                cache_key(phrase, language),
-                json.dumps(entry, ensure_ascii=False),
-                ex=CACHE_TTL_SECONDS,
-            )
-        pipe.execute()
+        mapping = {
+            cache_key(phrase, language): json.dumps(
+                entry, ensure_ascii=False
+            ).encode("utf-8")
+            for phrase, entry in entries.items()
+        }
+
+        failed = cache.set_many(
+            mapping,
+            expire=CACHE_TTL_SECONDS,
+            noreply=False,
+        )
+
+        if failed:
+            print(f"Memcached failed to store {len(failed)} key(s)")
 
     except Exception as e:
-        print(f"Redis write failed: {e}")
+        print(f"Memcached write failed: {e}")
 
 
 # CloudWatch cache metrics
