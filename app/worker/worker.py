@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 from pdf_generator import generate_phrasebook, upload_pdf
 from json_repair import repair_json
 
+import logging
 
 # AWS Systems Manager Parameter Store
 BOOTSTRAP_REGION = os.environ.get("AWS_REGION", "ap-southeast-2")
@@ -81,6 +82,14 @@ METRIC_NAMESPACE = CONFIG["metric-namespace"]
 MEMCACHE_HOST = CONFIG.get("memcache-host") or None
 MEMCACHE_PORT = int(CONFIG.get("memcache-port", "11211"))
 MEMCACHE_TLS = CONFIG.get("memcache-tls", "false").lower() == "true"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 
 # AWS service clients
@@ -417,9 +426,23 @@ Return only valid JSON.
                     }
                 ],
                 inferenceConfig={
-                    "maxTokens": 4096,
+                    "maxTokens": 8192,
                     "temperature": 0.0,
                 },
+            )
+
+            # Log Bedrock token usage
+            usage = response.get("usage", {})
+
+            input_tokens = usage.get("inputTokens", 0)
+            output_tokens = usage.get("outputTokens", 0)
+            total_tokens = usage.get("totalTokens", input_tokens + output_tokens)
+
+            logger.info(
+                "Bedrock token usage | Input: %s | Output: %s | Total: %s",
+                input_tokens,
+                output_tokens,
+                total_tokens
             )
 
             if response.get("stopReason") == "max_tokens":
